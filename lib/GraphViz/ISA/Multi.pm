@@ -3,10 +3,12 @@ package GraphViz::ISA::Multi;
 use strict;
 use GraphViz;
 
+use Carp;
+
 BEGIN {
 	use Exporter ();
 	use vars qw ($VERSION @ISA);
-	$VERSION     = 0.01;
+	$VERSION     = 0.02;
 }
 
 sub new
@@ -17,6 +19,7 @@ sub new
 
 	$self->{data} = {};
 	$self->{ignore} = $parameters{ignore};
+	$self->{changed} = 0;
 	return ($self);
 }
 
@@ -24,10 +27,9 @@ sub new
 sub graph 
 {
     my $self = shift;
+    return $self->{g} unless $self->{changed};
 
-    if (not defined $self->{g}) {
-	$self->{g} = GraphViz->new();
-    }
+    $self->{g} = GraphViz->new();
 
     ### draw all nodes:
     foreach my $module (sort keys %{$self->{data}}) {
@@ -42,6 +44,7 @@ sub graph
 	$self->{g}->add_edge($_, $module) for
 	    @{$self->{data}->{$module}};
     }
+    $self->{changed} = 0;
 
     return $self->{g};
 }
@@ -54,28 +57,40 @@ sub add
 
     foreach my $module (@to_add) {
 	next if grep /$module/i, @{$self->{ignore}};
+	next if $self->{data}->{$module};
 	my $filename = $module;
 	$filename =~ s!::!/!g;
 	$filename .= ".pm";
 
+	my @pkg = ($module);
 	eval { 
-	    if (! defined $INC{$filename} ) {
-	     require $filename; 
+	    require $filename; 
+	    # if we got more packages in a file, find them
+	    open my $fg, "<$INC{$filename}" or croak "$!\n";
+	    foreach my $line (<$fg>) {
+		if ($line =~ /package (.+);/) {
+		    push @pkg, $1 unless $1 eq $module;
+		}
 	    }
+	    close $fg;
         }; 
 	if ($@) {
 	    return undef;
 	}
 
 	no strict 'refs';
-	if (@{$module . "::ISA"} > 0) {
-	    $self->{data}->{$module} = \@{$module."::ISA"};
-	    foreach my $ign (@{$self->{ignore}}) {
-		@{$self->{data}->{$module}} = grep $_ !~ /$ign/, @{$self->{data}->{$module}} ;
+	foreach my $mod (@pkg) {
+	    if (@{$mod . "::ISA"} > 0) {
+		$self->{data}->{$mod} = \@{$mod."::ISA"};
+		foreach my $ign (@{$self->{ignore}}) {
+		    @{$self->{data}->{$mod}} = 
+			grep $_ !~ /$ign/, @{$self->{data}->{$mod}};
+		}
+		$self->add($_) foreach @{$mod."::ISA"};
 	    }
-	    $self->add($_) foreach @{$module."::ISA"};
 	}
     }
+    $self->{changed} = 1;
     return $self->{data};
 }
 
@@ -90,8 +105,9 @@ sub AUTOLOAD
 
     if ($n =~ /as_/) {
 	$self->graph();
-	### give it down to GraphViz:
+	
     }
+    ### give it down to GraphViz:
     $self->{g}->$n(@_);
 }
 

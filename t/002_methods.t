@@ -2,7 +2,7 @@
 
 # t/002_load.t - test the functions
 
-use Test::More tests => 6;
+use Test::More tests => 10;
 use FindBin;
 use lib "$FindBin::RealBin/../lib";
 
@@ -21,4 +21,11 @@ ok(!$object->add("Something::That::Does::Not::Exist"),
 my $gv = $object->graph();
 isa_ok($gv, "GraphViz");
 
+my $data = $object->as_plain();
+ok($object->as_plain() eq $data, "call as_ twice");
 
+ok($object->add("Test::More"), "add() 4");
+
+my $data2 = $object->as_plain();
+ok($object->as_plain() eq $data2, "call as_ twice 2");
+ok($data2 ne $data, "new object");
